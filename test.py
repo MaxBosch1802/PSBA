@@ -23,4 +23,5 @@ def update_graph(value):
 
 if __name__ == '__main__':
     app.run(debug=True)
-    
+
+#nächster Test
