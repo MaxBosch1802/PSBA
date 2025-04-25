@@ -32,7 +32,7 @@ df_filtered = df_all.merge(valid_routes[group_cols], on=group_cols, how="inner")
 
 
 #'DEPARTURES_PERFORMED'=0 raus
-df_filtered = df_filtered[df_filtered['DEPARTURES_PERFORMED'] > 0].copy()
+#df_filtered = df_filtered[df_filtered['DEPARTURES_PERFORMED'] > 0].copy()
 
 # p = Passagiere pro Flug
 df_filtered['p'] = np.floor(df_filtered['PASSENGERS'] / df_filtered['DEPARTURES_PERFORMED'])
@@ -49,5 +49,10 @@ print(count_flights)
 
 # Anzahl der eindeutigen Verbindungen nach dem Filtern
 anzahl_verbindungen = df_passagiere[group_cols].drop_duplicates().shape[0]
-print(f"Es sind {anzahl_verbindungen} eindeutige Flugverbindungen übrig geblieben.")
+print(anzahl_verbindungen)
 
+print(grouped.info)
+
+grouped.to_csv("grouped.csv", index=False)
+
+df_filtered.to_csv("df_filtered.csv", index=False)
