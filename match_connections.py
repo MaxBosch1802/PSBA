@@ -95,6 +95,16 @@ def read(csv1, csv2, csv3):
             passed.append(con)
 
     print(len(passed), "connections passed for all data frames.")
+    
+    df_passed = pd.DataFrame(passed, columns=[
+        "AIRLINE_ID", 
+        "UNIQUE_CARRIER_ENTITY", 
+        "ORIGIN", 
+        "DEST", 
+        "AIRCRAFT_TYPE"
+    ])
+    df_passed.to_csv("passed_connections.csv", index=False)
+
 
     
 if __name__ == "__main__":
