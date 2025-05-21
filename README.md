@@ -7,5 +7,7 @@ passed.csv  Alle Verbindungen die relevant sind
 
 aggregierte_verbindungen Eigentlich der Datensatz, den wir brauchen (Eine Zeile pro Verbindung pro Jahr pro Monat)
 
+Update: verbindungen_mit_kennzahlen.csv ist ergänzter Datensatz mit Passergers pro Flug und Auslastung
+
 
 
