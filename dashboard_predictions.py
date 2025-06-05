@@ -105,6 +105,9 @@ def update_dashboard(route, modell):
         title = f'Passagierzahlen: {origin} → {dest}'
 
     dff = dff.sort_values('DATE')
+    # Nur Daten von 2022 und 2023 verwenden
+    dff = dff[(dff['DATE'].dt.year >= 2022) & (dff['DATE'].dt.year <= 2023)]
+
 
     all_dates = pd.date_range(start=dff['DATE'].min(), end=dff['DATE'].max(), freq='MS')
     dff = dff.set_index('DATE').reindex(all_dates).fillna(0.0).rename_axis('DATE').reset_index()
@@ -168,6 +171,15 @@ def update_dashboard(route, modell):
             y_pred = model.predict(prophet_df)['yhat']
 
         # Prognose zeichnen
+        # Reale Daten für 2024 darstellen
+        if not y_true_2024.empty:
+            fig.add_scatter(
+            x=y_true_2024.index,
+            y=y_true_2024.values,
+            name='Tatsächliche Daten 2024',
+            mode='lines+markers',
+            line=dict(color='green', width=2, dash='dot')
+            )
         fig.add_scatter(x=future_dates, y=forecast, name='Prognose 2024', mode='lines', line=dict(dash='dash'))
 
         # Metriken berechnen
