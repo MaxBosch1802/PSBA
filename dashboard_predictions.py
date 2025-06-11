@@ -129,18 +129,6 @@ def update_dashboard(route, modell):
     else:
         y_true_2024 = y_true_2024[(df['ORIGIN'] == origin) & (df['DEST'] == dest)].set_index('DATE')['PASSENGERS']
 
-    # NEU: Trainingsdaten (nur 2022-2023)
-    y_train = df[df['DATE'] < '2024-01-01']
-
-    if route == 'ALL':
-        y_train = y_train.groupby('DATE')['PASSENGERS'].sum()
-    else:
-        y_train = y_train[(y_train['ORIGIN'] == origin) & (y_train['DEST'] == dest)].set_index('DATE')['PASSENGERS']
-
-    # WICHTIG: Reihenfolge der Zeitstempel sicherstellen
-    y_train = y_train.sort_index()
-    y_true_2024 = y_true_2024.sort_index()
-
     forecast = []
     y_pred = []
     mae = rmse = r2 = None
@@ -156,18 +144,7 @@ def update_dashboard(route, modell):
             forecast = model.predict(future_X)
 
         elif modell == 'HW':
-            model = ExponentialSmoothing(
-                y_train,   # <-- Nur Trainingsdaten
-                trend='add',
-                seasonal='add',
-                seasonal_periods=12
-            )
-            model_fit = model.fit()
-            y_pred = model_fit.fittedvalues
-            forecast = model_fit.forecast(12)  # 12 Monate
-
-        elif modell == 'HWmul':
-            model = ExponentialSmoothing(dff['PASSENGERS'], trend='mul', seasonal='mul', seasonal_periods=12)
+            model = ExponentialSmoothing(dff['PASSENGERS'], trend='add', seasonal='add', seasonal_periods=12)
             model_fit = model.fit()
             y_pred = model_fit.fittedvalues
             forecast = model_fit.forecast(12)
