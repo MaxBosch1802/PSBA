@@ -10,3 +10,4 @@ aggregierte_verbindungen.csv Eigentlich der Datensatz, den wir brauchen (Eine Ze
 Update: verbindungen_mit_kennzahlen.csv ist ergänzter Datensatz mit Passergers pro Flug und Auslastung
 
 Dashboard: dashboard.py aktuell mit Vorhersage für 2024 durch lineare Regression
+arima_cv.py Cross-Validation von ARIMA-Modellen ueber alle Verbindungen; schreibt Ergebnisse in arima_cv_results.csv
