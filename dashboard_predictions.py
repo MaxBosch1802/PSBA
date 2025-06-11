@@ -127,7 +127,8 @@ def update_dashboard(route, modell):
     if route == 'ALL':
         y_true_2024 = y_true_2024.groupby('DATE')['PASSENGERS'].sum()
     else:
-        y_true_2024 = y_true_2024[(df['ORIGIN'] == origin) & (df['DEST'] == dest)].set_index('DATE')['PASSENGERS']
+        # Filter innerhalb des bereits eingegrenzten 2024-Datensatzes vornehmen
+        y_true_2024 = y_true_2024[(y_true_2024['ORIGIN'] == origin) & (y_true_2024['DEST'] == dest)].set_index('DATE')['PASSENGERS']
 
     forecast = []
     y_pred = []
