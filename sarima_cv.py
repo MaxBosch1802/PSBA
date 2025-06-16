@@ -35,6 +35,8 @@ def evaluate_split(train, test, order, seasonal_order):
             enforce_invertibility=False,
         ).fit(disp=False)
         forecast = model.forecast(len(test))
+        if forecast.isna().any() or test.isna().any():
+            return None
     except Exception:
         return None
     mae = mean_absolute_error(test, forecast)
