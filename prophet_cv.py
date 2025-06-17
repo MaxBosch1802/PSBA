@@ -3,6 +3,7 @@ import numpy as np
 from prophet import Prophet
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from itertools import product
+from multiprocessing import Pool, cpu_count
 
 # Load list of connections
 connections = pd.read_csv("passed_connections.csv", dtype={"UNIQUE_CARRIER_ENTITY": str})
@@ -15,8 +16,9 @@ data['DATE'] = pd.to_datetime(data[['YEAR', 'MONTH']].assign(DAY=1))
 data.sort_values('DATE', inplace=True)
 
 # Parameter grid
-cp_scales = [0.01, 0.1, 0.5]
-seasonality_modes = ['additive', 'multiplicative']
+# Reduced grid to shorten runtime
+cp_scales = [0.05, 0.1]
+seasonality_modes = ['additive']
 params_grid = list(product(cp_scales, seasonality_modes))
 
 
@@ -42,17 +44,19 @@ def connection_splits(df_conn):
     """Return two train/test splits if enough data is available."""
     df_conn = df_conn.set_index('DATE').sort_index()
     train1 = df_conn[df_conn.index.year == 2022]['PASSENGERS'].reset_index()
-    test1 = df_conn[df_conn.index.year == 2023]['PASSENGERS'].reset_index()
-    train2 = df_conn[df_conn.index.year <= 2023]['PASSENGERS'].reset_index()
-    test2 = df_conn[df_conn.index.year == 2024]['PASSENGERS'].reset_index()
-    if len(train1) >= 12 and len(test1) >= 12 and len(train2) >= 24 and len(test2) >= 12:
+    test1 = df_conn[(df_conn.index >= '2023-01-01') & (df_conn.index < '2023-07-01')]['PASSENGERS'].reset_index()
+    train2 = df_conn[df_conn.index < '2024-01-01']['PASSENGERS'].reset_index()
+    test2 = df_conn[(df_conn.index >= '2024-01-01') & (df_conn.index < '2024-07-01')]['PASSENGERS'].reset_index()
+    if len(train1) >= 12 and len(test1) >= 6 and len(train2) >= 24 and len(test2) >= 6:
         return [(train1, test1), (train2, test2)]
     return []
 
 
 results = []
 
-for cp_scale, seasonality_mode in params_grid:
+
+def evaluate_params(args):
+    cp_scale, seasonality_mode = args
     fold_metrics = []
     for _, conn in connections.iterrows():
         mask = (
@@ -72,13 +76,20 @@ for cp_scale, seasonality_mode in params_grid:
                 pass
     if fold_metrics:
         arr = np.array(fold_metrics)
-        results.append({
+        return {
             'changepoint_prior_scale': cp_scale,
             'seasonality_mode': seasonality_mode,
             'MAE': arr[:, 0].mean(),
             'RMSE': arr[:, 1].mean(),
             'R2': arr[:, 2].mean(),
-        })
+        }
+    return None
+
+
+with Pool(cpu_count()) as pool:
+    for res in pool.map(evaluate_params, params_grid):
+        if res:
+            results.append(res)
 
 results_df = pd.DataFrame(results)
 results_df = results_df.sort_values(by=['RMSE']).reset_index(drop=True)
