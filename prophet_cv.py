@@ -3,7 +3,6 @@ import numpy as np
 from prophet import Prophet
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from itertools import product
-from multiprocessing import Pool, cpu_count
 
 # Load list of connections
 connections = pd.read_csv("passed_connections.csv", dtype={"UNIQUE_CARRIER_ENTITY": str})
@@ -54,9 +53,7 @@ def connection_splits(df_conn):
 
 results = []
 
-
-def evaluate_params(args):
-    cp_scale, seasonality_mode = args
+for cp_scale, seasonality_mode in params_grid:
     fold_metrics = []
     for _, conn in connections.iterrows():
         mask = (
@@ -76,20 +73,13 @@ def evaluate_params(args):
                 pass
     if fold_metrics:
         arr = np.array(fold_metrics)
-        return {
+        results.append({
             'changepoint_prior_scale': cp_scale,
             'seasonality_mode': seasonality_mode,
             'MAE': arr[:, 0].mean(),
             'RMSE': arr[:, 1].mean(),
             'R2': arr[:, 2].mean(),
-        }
-    return None
-
-
-with Pool(cpu_count()) as pool:
-    for res in pool.map(evaluate_params, params_grid):
-        if res:
-            results.append(res)
+        })
 
 results_df = pd.DataFrame(results)
 results_df = results_df.sort_values(by=['RMSE']).reset_index(drop=True)
