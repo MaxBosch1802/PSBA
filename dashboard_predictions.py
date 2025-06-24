@@ -145,19 +145,32 @@ def update_dashboard(route, modell):
             forecast = model.predict(future_X)
 
         elif modell == 'HW':
-            model = ExponentialSmoothing(dff['PASSENGERS'], trend='add', seasonal='add', seasonal_periods=12)
-            model_fit = model.fit()
+            model = ExponentialSmoothing(
+                dff['PASSENGERS'],
+                trend='add',
+                seasonal='add',
+                seasonal_periods=12,
+                damped_trend=True,
+                initialization_method='estimated'
+            )
+            model_fit = model.fit(optimized=True)
             y_pred = model_fit.fittedvalues
             forecast = model_fit.forecast(12)
 
         elif modell == 'ARIMA':
-            model = ARIMA(dff['PASSENGERS'], order=(1, 1, 1))
+            # Best parameters from cross validation
+            model = ARIMA(dff['PASSENGERS'], order=(1, 0, 1))
             model_fit = model.fit()
             y_pred = model_fit.predict(start=1, end=len(dff)-1, typ="levels")
             forecast = model_fit.forecast(12)
 
         elif modell == 'SARIMA':
-            model = SARIMAX(dff['PASSENGERS'], order=(1,1,1), seasonal_order=(1,1,1,12))
+            # Best parameters from cross validation
+            model = SARIMAX(
+                dff['PASSENGERS'],
+                order=(0, 0, 0),
+                seasonal_order=(1, 1, 0, 12)
+            )
             model_fit = model.fit(disp=False)
             y_pred = model_fit.fittedvalues
             forecast = model_fit.forecast(12)
