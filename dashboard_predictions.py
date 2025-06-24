@@ -165,12 +165,7 @@ def update_dashboard(route, modell):
             forecast = model_fit.forecast(12)
 
         elif modell == 'SARIMA':
-            # Best parameters from cross validation
-            model = SARIMAX(
-                dff['PASSENGERS'],
-                order=(0, 0, 0),
-                seasonal_order=(1, 1, 0, 12)
-            )
+            model = SARIMAX(dff['PASSENGERS'], order=(0,0,0), seasonal_order=(1,1,0,12))
             model_fit = model.fit(disp=False)
             y_pred = model_fit.fittedvalues
             forecast = model_fit.forecast(12)
