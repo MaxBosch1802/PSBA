@@ -105,12 +105,18 @@ def update_dashboard(route):
     model = LinearRegression()
     model.fit(X, y)
 
-    # Prognose für 2024
-    future_dates = pd.date_range(start='2024-01-01', end='2024-12-01', freq='MS')
+    # Prognose für 2024 und 2025
+    future_dates = pd.date_range(start='2024-01-01', end='2025-12-01', freq='MS')
     future_timestamps = (future_dates - dff['DATE'].min()).days.values.reshape(-1, 1)
     future_preds = model.predict(future_timestamps)
 
-    fig.add_scatter(x=future_dates, y=future_preds, name='Prognose 2024', mode='lines', line=dict(dash='dash'))
+    fig.add_scatter(
+        x=future_dates,
+        y=future_preds,
+        name='Prognose 2024-2025',
+        mode='lines',
+        line=dict(dash='dash')
+    )
 
     # Metriken
     y_pred = model.predict(X)
