@@ -122,7 +122,7 @@ def update_dashboard(route, modell):
         html.Tr([html.Td("Standardabweichung"), html.Td(f"{dff['PASSENGERS'].std():,.0f}")]),
     ])
 
-    future_dates = pd.date_range(start='2024-01-01', end='2024-12-01', freq='MS')
+    future_dates = pd.date_range(start='2024-01-01', end='2025-12-01', freq='MS')
     y_true_2024 = df[df['DATE'].between('2024-01-01', '2024-12-31')]
     if route == 'ALL':
         y_true_2024 = y_true_2024.groupby('DATE')['PASSENGERS'].sum()
@@ -155,20 +155,20 @@ def update_dashboard(route, modell):
             )
             model_fit = model.fit(optimized=True)
             y_pred = model_fit.fittedvalues
-            forecast = model_fit.forecast(12)
+            forecast = model_fit.forecast(24)
 
         elif modell == 'ARIMA':
             # Best parameters from cross validation
             model = ARIMA(dff['PASSENGERS'], order=(1, 0, 1))
             model_fit = model.fit()
             y_pred = model_fit.predict(start=1, end=len(dff)-1, typ="levels")
-            forecast = model_fit.forecast(12)
+            forecast = model_fit.forecast(24)
 
         elif modell == 'SARIMA':
             model = SARIMAX(dff['PASSENGERS'], order=(0,0,0), seasonal_order=(1,1,0,12))
             model_fit = model.fit(disp=False)
             y_pred = model_fit.fittedvalues
-            forecast = model_fit.forecast(12)
+            forecast = model_fit.forecast(24)
 
         elif modell == 'PROPHET':
             prophet_df = dff[['DATE', 'PASSENGERS']].rename(columns={'DATE': 'ds', 'PASSENGERS': 'y'})
@@ -189,12 +189,19 @@ def update_dashboard(route, modell):
             mode='lines+markers',
             line=dict(color='green', width=2, dash='dot')
             )
-        fig.add_scatter(x=future_dates, y=forecast, name='Prognose 2024', mode='lines', line=dict(dash='dash'))
+        fig.add_scatter(
+            x=future_dates,
+            y=forecast,
+            name='Prognose 2024-2025',
+            mode='lines',
+            line=dict(dash='dash')
+        )
 
         # Metriken berechnen
-        mae = mean_absolute_error(y_true_2024, forecast)
-        rmse = np.sqrt(mean_squared_error(y_true_2024, forecast))
-        r2 = r2_score(y_true_2024, forecast)
+        forecast_2024 = forecast[:len(y_true_2024)]
+        mae = mean_absolute_error(y_true_2024, forecast_2024)
+        rmse = np.sqrt(mean_squared_error(y_true_2024, forecast_2024))
+        r2 = r2_score(y_true_2024, forecast_2024)
 
     except Exception as e:
         print("Fehler bei Prognose:", e)
