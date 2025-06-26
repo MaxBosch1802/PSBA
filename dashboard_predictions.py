@@ -121,6 +121,8 @@ app.layout = html.Div([
 
             dcc.Graph(id='zeitreihe'),
 
+            html.Div(id='ranking-output', style={'marginTop': '20px'}),
+
             html.H3("Auslastung & Statistiken"),
             html.Div(id='statistik-output'),
 
@@ -189,12 +191,13 @@ def update_ranking_table(min_passagiere):
     Output('zeitreihe', 'figure'),
     Output('statistik-output', 'children'),
     Output('metriken-output', 'children'),
+    Output('ranking-output', 'children'),
     Input('route-select', 'value'),
     Input('modell-select', 'value')
 )
 def update_dashboard(route, modell):
     if not route:
-        return {}, "", ""
+        return {}, "", "", ""
 
     if route == 'ALL':
         df_agg = df.groupby('DATE').agg({'PASSENGERS': 'sum', 'SEATS': 'sum'}).reset_index()
@@ -203,10 +206,27 @@ def update_dashboard(route, modell):
         df_agg['DEST'] = 'ALL'
         dff = df_agg
         title = 'Passagierzahlen: Alle Flüge'
+        ranking_div = html.Div("Kein Ranking für alle Flüge")
     else:
         origin, dest = route.split("_")
         dff = df[(df['ORIGIN'] == origin) & (df['DEST'] == dest)].copy()
         title = f'Passagierzahlen: {origin} → {dest}'
+        row = ranking_df[(ranking_df['ORIGIN'] == origin) & (ranking_df['DEST'] == dest)]
+        if row.empty:
+            ranking_div = html.Div("Keine Ranking-Daten verfügbar")
+        else:
+            score = row['score'].iloc[0]
+            ampel = row['ampel'].iloc[0]
+            color_map = {
+                'Empfehlung': '#d4edda',
+                'Beobachten': '#fff3cd',
+                'Nicht empfehlenswert': '#f8d7da'
+            }
+            color = color_map.get(ampel, '#ffffff')
+            ranking_div = html.Div([
+                html.Strong(f"Score: {score:.2f}"),
+                html.Span(f" – {ampel}", style={'marginLeft': '5px'})
+            ], style={'padding': '10px', 'borderRadius': '5px', 'backgroundColor': color})
 
     dff = dff.sort_values('DATE')
     # Nur Daten von 2022 und 2023 verwenden
@@ -318,7 +338,7 @@ def update_dashboard(route, modell):
         html.Tr([html.Td("R²"), html.Td(f"{r2:.2f}" if r2 else "-")]),
     ])
 
-    return fig, stats_table, metriken_table
+    return fig, stats_table, metriken_table, ranking_div
 
 if __name__ == '__main__':
     app.run(debug=True)
