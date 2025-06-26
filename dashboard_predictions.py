@@ -1,6 +1,7 @@
 import pandas as pd
 import dash
 from dash import dcc, html, Input, Output
+from dash import dash_table
 import plotly.express as px
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -13,6 +14,67 @@ from prophet import Prophet
 # Daten laden
 df = pd.read_csv("verbindungen_mit_kennzahlen.csv")
 df['DATE'] = pd.to_datetime(df[['YEAR', 'MONTH']].assign(DAY=1))
+
+
+def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
+    """Berechne Routen-Ranking mit Route Performance Score."""
+    df_filtered = data[(data['DATE'].dt.year >= 2022) & (data['DATE'].dt.year <= 2023)]
+    rows = []
+    for (origin, dest), grp in df_filtered.groupby(['ORIGIN', 'DEST']):
+        grp = grp.sort_values('DATE')
+        mean_passengers = grp['PASSENGERS'].mean()
+        mean_load_factor = grp['AUSLASTUNG'].mean()
+        months = np.arange(len(grp)).reshape(-1, 1)
+        if len(grp) > 1:
+            lr = LinearRegression().fit(months, grp['PASSENGERS'].values)
+            trend = lr.coef_[0]
+            future = np.arange(len(grp), len(grp) + 24).reshape(-1, 1)
+            forecast = lr.predict(future)
+        else:
+            trend = 0.0
+            forecast = np.repeat(mean_passengers, 24)
+        forecast_2025 = forecast[12:]
+        mean_2023 = grp[grp['DATE'].dt.year == 2023]['PASSENGERS'].mean()
+        prognosewachstum = forecast_2025.mean() - mean_2023 if not np.isnan(mean_2023) else 0.0
+        stability = 1 - (grp['PASSENGERS'].std() / mean_passengers) if mean_passengers else 0.0
+        rows.append({
+            'ORIGIN': origin,
+            'DEST': dest,
+            'mean_passagiere': mean_passengers,
+            'mean_load_factor': mean_load_factor,
+            'trend': trend,
+            'stabilitaet': stability,
+            'prognosewachstum': prognosewachstum
+        })
+
+    ranking = pd.DataFrame(rows)
+    if ranking.empty:
+        return ranking
+
+    for col in ['mean_passagiere', 'mean_load_factor', 'trend', 'stabilitaet', 'prognosewachstum']:
+        min_v = ranking[col].min()
+        max_v = ranking[col].max()
+        ranking[f'norm_{col}'] = (ranking[col] - min_v) / (max_v - min_v) if max_v != min_v else 0.0
+
+    ranking['score'] = (
+        0.3 * ranking['norm_mean_passagiere'] +
+        0.25 * ranking['norm_mean_load_factor'] +
+        0.2 * ranking['norm_trend'] +
+        0.15 * ranking['norm_stabilitaet'] +
+        0.1 * ranking['norm_prognosewachstum']
+    ) * 100
+
+    ranking['ampel'] = pd.cut(
+        ranking['score'],
+        bins=[-np.inf, 50, 75, np.inf],
+        labels=['Nicht empfehlenswert', 'Beobachten', 'Empfehlung']
+    )
+    ranking = ranking.sort_values('score', ascending=False)
+    ranking['score'] = ranking['score'].round(2)
+    return ranking
+
+
+ranking_df = compute_route_ranking(df)
 
 # App initialisieren
 app = dash.Dash(__name__)
@@ -35,33 +97,65 @@ app.layout = html.Div([
         )
     ], style={'width': '60%', 'marginBottom': '30px'}),
 
-    html.Div([
-        html.Label("Wähle Route:"),
-        dcc.Dropdown(id='route-select')
-    ], style={'width': '45%', 'display': 'inline-block'}),
+    dcc.Tabs([
+        dcc.Tab(label='Routen-Analyse', children=[
+            html.Div([
+                html.Label("Wähle Route:"),
+                dcc.Dropdown(id='route-select')
+            ], style={'width': '45%', 'display': 'inline-block'}),
 
-    html.Div([
-        html.Label("Prognosemodell auswählen:"),
-        dcc.Dropdown(
-            id='modell-select',
-            options=[
-                {'label': 'Lineare Regression', 'value': 'LR'},
-                {'label': 'Holt-Winters', 'value': 'HW'},
-                {'label': 'ARIMA', 'value': 'ARIMA'},
-                {'label': 'SARIMA', 'value': 'SARIMA'},
-                {'label': 'Prophet', 'value': 'PROPHET'}
-            ],
-            value='LR'
-        )
-    ], style={'width': '45%', 'display': 'inline-block', 'marginLeft': '5%'}),
+            html.Div([
+                html.Label("Prognosemodell auswählen:"),
+                dcc.Dropdown(
+                    id='modell-select',
+                    options=[
+                        {'label': 'Lineare Regression', 'value': 'LR'},
+                        {'label': 'Holt-Winters', 'value': 'HW'},
+                        {'label': 'ARIMA', 'value': 'ARIMA'},
+                        {'label': 'SARIMA', 'value': 'SARIMA'},
+                        {'label': 'Prophet', 'value': 'PROPHET'}
+                    ],
+                    value='LR'
+                )
+            ], style={'width': '45%', 'display': 'inline-block', 'marginLeft': '5%'}),
 
-    dcc.Graph(id='zeitreihe'),
+            dcc.Graph(id='zeitreihe'),
 
-    html.H3("Auslastung & Statistiken"),
-    html.Div(id='statistik-output'),
+            html.H3("Auslastung & Statistiken"),
+            html.Div(id='statistik-output'),
 
-    html.H3("Prognose-Metriken"),
-    html.Div(id='metriken-output')
+            html.H3("Prognose-Metriken"),
+            html.Div(id='metriken-output')
+        ]),
+        dcc.Tab(label='Routen-Ranking', children=[
+            dash_table.DataTable(
+                id='ranking-table',
+                columns=[
+                    {'name': 'Origin', 'id': 'ORIGIN'},
+                    {'name': 'Destination', 'id': 'DEST'},
+                    {'name': 'Ø Passagiere', 'id': 'mean_passagiere', 'type': 'numeric', 'format': {'specifier': '.0f'}},
+                    {'name': 'Ø Auslastung', 'id': 'mean_load_factor', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                    {'name': 'Trend', 'id': 'trend', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                    {'name': 'Stabilität', 'id': 'stabilitaet', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                    {'name': 'Prognosewachstum', 'id': 'prognosewachstum', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                    {'name': 'Score', 'id': 'score', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                    {'name': 'Empfehlung', 'id': 'ampel'}
+                ],
+                sort_action='native',
+                page_size=20,
+                data=[],
+                style_cell={'textAlign': 'center'},
+                style_data_conditional=[
+                    {'if': {'filter_query': '{ampel} = "Empfehlung"', 'column_id': 'ampel'},
+                     'backgroundColor': '#d4edda'},
+                    {'if': {'filter_query': '{ampel} = "Beobachten"', 'column_id': 'ampel'},
+                     'backgroundColor': '#fff3cd'},
+                    {'if': {'filter_query': '{ampel} = "Nicht empfehlenswert"', 'column_id': 'ampel'},
+                     'backgroundColor': '#f8d7da'}
+                ]
+            )
+        ])
+    ])
 ])
 
 @app.callback(
@@ -81,6 +175,15 @@ def filter_routen(min_passagiere):
             routen.append({'label': label, 'value': value})
 
     return routen, routen[0]['value']
+
+
+@app.callback(
+    Output('ranking-table', 'data'),
+    Input('passagier-filter', 'value')
+)
+def update_ranking_table(min_passagiere):
+    filtered = ranking_df[ranking_df['mean_passagiere'] >= min_passagiere]
+    return filtered.to_dict('records')
 
 @app.callback(
     Output('zeitreihe', 'figure'),
