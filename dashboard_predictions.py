@@ -15,6 +15,17 @@ from prophet import Prophet
 df = pd.read_csv("verbindungen_mit_kennzahlen.csv")
 df['DATE'] = pd.to_datetime(df[['YEAR', 'MONTH']].assign(DAY=1))
 
+# Mehrere Einträge pro Monat und Strecke zusammenfassen
+agg_cols = {
+    'PASSENGERS': 'sum',
+    'SEATS': 'sum'
+}
+df = df.groupby(['ORIGIN', 'DEST', 'DATE'], as_index=False).agg(agg_cols)
+df['AUSLASTUNG'] = df['PASSENGERS'] / df['SEATS']
+# YEAR und MONTH nach Aggregation neu berechnen
+df['YEAR'] = df['DATE'].dt.year
+df['MONTH'] = df['DATE'].dt.month
+
 
 def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
     """Berechne Routen-Ranking basierend auf SARIMA-Prognosen."""
