@@ -86,3 +86,4 @@ print(results_df)
 best = results_df.iloc[0]
 print("\nBest parameter set:")
 print(best)
+results_df.to_csv("holt_winters_cv_results.csv", index=False)
