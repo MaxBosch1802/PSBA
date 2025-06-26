@@ -94,7 +94,8 @@ def update_dashboard(route, modell):
         return {}, "", ""
 
     if route == 'ALL':
-        df_agg = df.groupby('DATE')['PASSENGERS'].sum().reset_index()
+        df_agg = df.groupby('DATE').agg({'PASSENGERS': 'sum', 'SEATS': 'sum'}).reset_index()
+        df_agg['AUSLASTUNG'] = df_agg['PASSENGERS'] / df_agg['SEATS']
         df_agg['ORIGIN'] = 'ALL'
         df_agg['DEST'] = 'ALL'
         dff = df_agg
@@ -118,6 +119,7 @@ def update_dashboard(route, modell):
     stats_table = html.Table([
         html.Tr([html.Th("Metrik"), html.Th("Wert")]),
         html.Tr([html.Td("⌀ Passagiere"), html.Td(f"{dff['PASSENGERS'].mean():,.0f}")]),
+        html.Tr([html.Td("⌀ Auslastung (%)"), html.Td(f"{dff['AUSLASTUNG'].mean() * 100:.2f}%")]),
         html.Tr([html.Td("Min/Max Passagiere"), html.Td(f"{dff['PASSENGERS'].min():,.0f} / {dff['PASSENGERS'].max():,.0f}")]),
         html.Tr([html.Td("Standardabweichung"), html.Td(f"{dff['PASSENGERS'].std():,.0f}")]),
     ])
