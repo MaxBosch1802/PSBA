@@ -17,51 +17,80 @@ df['DATE'] = pd.to_datetime(df[['YEAR', 'MONTH']].assign(DAY=1))
 
 
 def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
-    """Berechne Routen-Ranking mit Route Performance Score."""
-    df_filtered = data[(data['DATE'].dt.year >= 2022) & (data['DATE'].dt.year <= 2023)]
+    """Berechne Routen-Ranking basierend auf SARIMA-Prognosen."""
+
+    # Trainings- und Evaluierungszeiträume festlegen
+    hist = data[(data['DATE'].dt.year >= 2022) & (data['DATE'].dt.year <= 2023)]
+    eval_2024 = data[data['DATE'].dt.year == 2024]
+
     rows = []
-    for (origin, dest), grp in df_filtered.groupby(['ORIGIN', 'DEST']):
-        grp = grp.sort_values('DATE')
-        mean_passengers = grp['PASSENGERS'].mean()
-        mean_load_factor = grp['AUSLASTUNG'].mean()
-        months = np.arange(len(grp)).reshape(-1, 1)
-        if len(grp) > 1:
-            lr = LinearRegression().fit(months, grp['PASSENGERS'].values)
-            trend = lr.coef_[0]
-            future = np.arange(len(grp), len(grp) + 24).reshape(-1, 1)
-            forecast = lr.predict(future)
+
+    for (origin, dest), grp_hist in hist.groupby(['ORIGIN', 'DEST']):
+        grp_hist = grp_hist.sort_values('DATE')
+        grp_eval = eval_2024[(eval_2024['ORIGIN'] == origin) & (eval_2024['DEST'] == dest)].sort_values('DATE')
+
+        mean_passengers = grp_hist['PASSENGERS'].mean()
+        mean_load_factor = grp_hist['AUSLASTUNG'].mean()
+        std_passengers = grp_hist['PASSENGERS'].std()
+
+        # Historische Stabilität
+        stability = 1 - (std_passengers / mean_passengers) if mean_passengers else 0.0
+
+        # SARIMA Forecast
+        if len(grp_hist) > 1:
+            try:
+                model = SARIMAX(grp_hist['PASSENGERS'], order=(0, 0, 0), seasonal_order=(1, 1, 0, 12))
+                model_fit = model.fit(disp=False)
+                forecast = model_fit.forecast(24)
+            except Exception:
+                forecast = np.repeat(mean_passengers, 24)
         else:
-            trend = 0.0
             forecast = np.repeat(mean_passengers, 24)
+
+        forecast_2024 = forecast[:12]
         forecast_2025 = forecast[12:]
-        mean_2023 = grp[grp['DATE'].dt.year == 2023]['PASSENGERS'].mean()
-        prognosewachstum = forecast_2025.mean() - mean_2023 if not np.isnan(mean_2023) else 0.0
-        stability = 1 - (grp['PASSENGERS'].std() / mean_passengers) if mean_passengers else 0.0
+
+        # RMSE über 2024 berechnen
+        if not grp_eval.empty:
+            actual_2024 = grp_eval['PASSENGERS'].values[:len(forecast_2024)]
+            rmse = np.sqrt(mean_squared_error(actual_2024, forecast_2024[:len(actual_2024)]))
+        else:
+            rmse = np.nan
+
+        mean_2023 = grp_hist[grp_hist['DATE'].dt.year == 2023]['PASSENGERS'].mean()
+        forecast_growth = forecast_2025.mean() - mean_2023 if not np.isnan(mean_2023) else 0.0
+
         rows.append({
             'ORIGIN': origin,
             'DEST': dest,
             'mean_passagiere': mean_passengers,
             'mean_load_factor': mean_load_factor,
-            'trend': trend,
-            'stabilitaet': stability,
-            'prognosewachstum': prognosewachstum
+            'forecast_growth_sarima': forecast_growth,
+            'rmse': rmse,
+            'stabilitaet': stability
         })
 
     ranking = pd.DataFrame(rows)
     if ranking.empty:
         return ranking
 
-    for col in ['mean_passagiere', 'mean_load_factor', 'trend', 'stabilitaet', 'prognosewachstum']:
+    # Fehlende RMSE-Werte mit dem Spaltenmaximum auffüllen
+    if ranking['rmse'].isna().any():
+        ranking['rmse'] = ranking['rmse'].fillna(ranking['rmse'].max())
+
+    for col in ['mean_passagiere', 'mean_load_factor', 'forecast_growth_sarima', 'rmse', 'stabilitaet']:
         min_v = ranking[col].min()
         max_v = ranking[col].max()
         ranking[f'norm_{col}'] = (ranking[col] - min_v) / (max_v - min_v) if max_v != min_v else 0.0
 
+    forecast_error_stability = 1 - ranking['norm_rmse']
+
     ranking['score'] = (
-        0.3 * ranking['norm_mean_passagiere'] +
-        0.25 * ranking['norm_mean_load_factor'] +
-        0.2 * ranking['norm_trend'] +
-        0.15 * ranking['norm_stabilitaet'] +
-        0.1 * ranking['norm_prognosewachstum']
+        0.25 * ranking['norm_mean_passagiere'] +
+        0.20 * ranking['norm_mean_load_factor'] +
+        0.25 * ranking['norm_forecast_growth_sarima'] +
+        0.20 * forecast_error_stability +
+        0.10 * ranking['norm_stabilitaet']
     ) * 100
 
     ranking['ampel'] = pd.cut(
@@ -69,6 +98,7 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
         bins=[-np.inf, 50, 75, np.inf],
         labels=['Nicht empfehlenswert', 'Beobachten', 'Empfehlung']
     )
+
     ranking = ranking.sort_values('score', ascending=False)
     ranking['score'] = ranking['score'].round(2)
     return ranking
