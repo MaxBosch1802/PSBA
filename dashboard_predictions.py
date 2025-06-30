@@ -12,7 +12,10 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from prophet import Prophet
 
 # Daten laden
-df = pd.read_csv("verbindungen_mit_kennzahlen.csv")
+df = pd.read_csv(
+    "verbindungen_mit_kennzahlen.csv",
+    dtype={"UNIQUE_CARRIER_ENTITY": str}
+)
 df['DATE'] = pd.to_datetime(df[['YEAR', 'MONTH']].assign(DAY=1))
 
 
@@ -30,7 +33,12 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
         grp_eval = eval_2024[(eval_2024['ORIGIN'] == origin) & (eval_2024['DEST'] == dest)].sort_values('DATE')
 
         # Zeitreihe für SARIMA vorbereiten
-        ts = grp_hist.set_index('DATE')['PASSENGERS'].asfreq('MS')
+        ts = (
+            grp_hist.groupby('DATE')['PASSENGERS']
+            .sum()
+            .sort_index()
+            .asfreq('MS', fill_value=0.0)
+        )
 
         mean_passengers = grp_hist['PASSENGERS'].mean()
         mean_load_factor = grp_hist['AUSLASTUNG'].mean()
