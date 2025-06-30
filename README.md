@@ -11,3 +11,11 @@ Update: verbindungen_mit_kennzahlen.csv ist ergänzter Datensatz mit Passergers 
 
 Dashboard: dashboard.py erstellt nun Vorhersagen für 2024 und 2025 mittels linearer Regression
 arima_cv.py Cross-Validation von ARIMA-Modellen ueber alle Verbindungen; schreibt Ergebnisse in arima_cv_results.csv
+
+## Installation
+
+Install the required packages with:
+
+```bash
+pip install -r requirements.txt
+```
