@@ -68,12 +68,16 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
         forecast_2024 = forecast[:12]
         forecast_2025 = forecast[12:]
 
-        # RMSE über 2024 berechnen
+        # RMSE und relativer RMSE über 2024 berechnen
         if not grp_eval.empty:
             actual_2024 = grp_eval['PASSENGERS'].values[:len(forecast_2024)]
-            rmse = np.sqrt(mean_squared_error(actual_2024, forecast_2024[:len(actual_2024)]))
+            rmse = np.sqrt(
+                mean_squared_error(actual_2024, forecast_2024[: len(actual_2024)])
+            )
         else:
             rmse = np.nan
+
+        rrmse = rmse / mean_passengers if mean_passengers else np.nan
 
         mean_2023 = grp_hist[grp_hist['DATE'].dt.year == 2023]['PASSENGERS'].mean()
         forecast_growth = forecast_2025.mean() - mean_2023 if not np.isnan(mean_2023) else 0.0
@@ -84,7 +88,7 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
             'mean_passagiere': mean_passengers,
             'mean_load_factor': mean_load_factor,
             'forecast_growth': forecast_growth,
-            'rmse': rmse,
+            'rrmse': rrmse,
             'stabilitaet': stability
         })
 
@@ -92,16 +96,16 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
     if ranking.empty:
         return ranking
 
-    # Fehlende RMSE-Werte mit dem Spaltenmaximum auffüllen
-    if ranking['rmse'].isna().any():
-        ranking['rmse'] = ranking['rmse'].fillna(ranking['rmse'].max())
+    # Fehlende RRMSE-Werte mit dem Spaltenmaximum auffüllen
+    if ranking['rrmse'].isna().any():
+        ranking['rrmse'] = ranking['rrmse'].fillna(ranking['rrmse'].max())
 
-    for col in ['mean_passagiere', 'mean_load_factor', 'forecast_growth', 'rmse', 'stabilitaet']:
+    for col in ['mean_passagiere', 'mean_load_factor', 'forecast_growth', 'rrmse', 'stabilitaet']:
         min_v = ranking[col].min()
         max_v = ranking[col].max()
         ranking[f'norm_{col}'] = (ranking[col] - min_v) / (max_v - min_v) if max_v != min_v else 0.0
 
-    forecast_error_stability = 1 - ranking['norm_rmse']
+    forecast_error_stability = 1 - ranking['norm_rrmse']
 
     ranking['score'] = (
         0.25 * ranking['norm_mean_passagiere'] +
@@ -187,7 +191,7 @@ app.layout = html.Div([
                     {'name': 'Ø Auslastung', 'id': 'mean_load_factor', 'type': 'numeric', 'format': {'specifier': '.2f'}},
                     {'name': 'Stabilität', 'id': 'stabilitaet', 'type': 'numeric', 'format': {'specifier': '.2f'}},
                     {'name': 'Prognosewachstum', 'id': 'forecast_growth', 'type': 'numeric', 'format': {'specifier': '.2f'}},
-                    {'name': 'RMSE', 'id': 'rmse', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                    {'name': 'RRMSE', 'id': 'rrmse', 'type': 'numeric', 'format': {'specifier': '.4f'}},
                     {'name': 'Score', 'id': 'score', 'type': 'numeric', 'format': {'specifier': '.2f'}},
                     {'name': 'Empfehlung', 'id': 'ampel'}
                 ],
