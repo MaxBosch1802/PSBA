@@ -29,6 +29,9 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
         grp_hist = grp_hist.sort_values('DATE')
         grp_eval = eval_2024[(eval_2024['ORIGIN'] == origin) & (eval_2024['DEST'] == dest)].sort_values('DATE')
 
+        # Zeitreihe für SARIMA vorbereiten
+        ts = grp_hist.set_index('DATE')['PASSENGERS'].asfreq('MS')
+
         mean_passengers = grp_hist['PASSENGERS'].mean()
         mean_load_factor = grp_hist['AUSLASTUNG'].mean()
         std_passengers = grp_hist['PASSENGERS'].std()
@@ -37,9 +40,9 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
         stability = 1 - (std_passengers / mean_passengers) if mean_passengers else 0.0
 
         # SARIMA Forecast
-        if len(grp_hist) > 1:
+        if len(ts) > 1:
             try:
-                model = SARIMAX(grp_hist['PASSENGERS'], order=(0, 0, 0), seasonal_order=(1, 1, 0, 12))
+                model = SARIMAX(ts, order=(0, 0, 0), seasonal_order=(1, 1, 0, 12))
                 model_fit = model.fit(disp=False)
                 forecast = model_fit.forecast(24)
             except Exception:
