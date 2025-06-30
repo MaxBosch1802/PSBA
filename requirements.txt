@@ -1,0 +1,8 @@
+pandas
+numpy
+scikit-learn
+dash>=2.17.0
+plotly
+statsmodels
+prophet
+matplotlib
