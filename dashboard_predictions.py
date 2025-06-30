@@ -20,7 +20,7 @@ df['DATE'] = pd.to_datetime(df[['YEAR', 'MONTH']].assign(DAY=1))
 
 
 def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
-    """Berechne Routen-Ranking basierend auf SARIMA-Prognosen."""
+    """Berechne Routen-Ranking basierend auf Holt-Winters-Prognosen."""
 
     # Trainings- und Evaluierungszeiträume festlegen
     hist = data[(data['DATE'].dt.year >= 2022) & (data['DATE'].dt.year <= 2023)]
@@ -32,7 +32,7 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
         grp_hist = grp_hist.sort_values('DATE')
         grp_eval = eval_2024[(eval_2024['ORIGIN'] == origin) & (eval_2024['DEST'] == dest)].sort_values('DATE')
 
-        # Zeitreihe für SARIMA vorbereiten
+        # Zeitreihe für Holt-Winters vorbereiten
         ts = (
             grp_hist.groupby('DATE')['PASSENGERS']
             .sum()
@@ -47,11 +47,18 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
         # Historische Stabilität
         stability = 1 - (std_passengers / mean_passengers) if mean_passengers else 0.0
 
-        # SARIMA Forecast
+        # Holt-Winters Forecast
         if len(ts) > 1:
             try:
-                model = SARIMAX(ts, order=(0, 0, 0), seasonal_order=(1, 1, 0, 12))
-                model_fit = model.fit(disp=False)
+                model = ExponentialSmoothing(
+                    ts,
+                    trend="add",
+                    seasonal="add",
+                    seasonal_periods=12,
+                    damped_trend=True,
+                    initialization_method="estimated",
+                )
+                model_fit = model.fit(optimized=True)
                 forecast = model_fit.forecast(24)
             except Exception:
                 forecast = np.repeat(mean_passengers, 24)
@@ -76,7 +83,7 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
             'DEST': dest,
             'mean_passagiere': mean_passengers,
             'mean_load_factor': mean_load_factor,
-            'forecast_growth_sarima': forecast_growth,
+            'forecast_growth': forecast_growth,
             'rmse': rmse,
             'stabilitaet': stability
         })
@@ -89,7 +96,7 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
     if ranking['rmse'].isna().any():
         ranking['rmse'] = ranking['rmse'].fillna(ranking['rmse'].max())
 
-    for col in ['mean_passagiere', 'mean_load_factor', 'forecast_growth_sarima', 'rmse', 'stabilitaet']:
+    for col in ['mean_passagiere', 'mean_load_factor', 'forecast_growth', 'rmse', 'stabilitaet']:
         min_v = ranking[col].min()
         max_v = ranking[col].max()
         ranking[f'norm_{col}'] = (ranking[col] - min_v) / (max_v - min_v) if max_v != min_v else 0.0
@@ -99,7 +106,7 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
     ranking['score'] = (
         0.25 * ranking['norm_mean_passagiere'] +
         0.20 * ranking['norm_mean_load_factor'] +
-        0.25 * ranking['norm_forecast_growth_sarima'] +
+        0.25 * ranking['norm_forecast_growth'] +
         0.20 * forecast_error_stability +
         0.10 * ranking['norm_stabilitaet']
     ) * 100
@@ -178,9 +185,9 @@ app.layout = html.Div([
                     {'name': 'Destination', 'id': 'DEST'},
                     {'name': 'Ø Passagiere', 'id': 'mean_passagiere', 'type': 'numeric', 'format': {'specifier': '.0f'}},
                     {'name': 'Ø Auslastung', 'id': 'mean_load_factor', 'type': 'numeric', 'format': {'specifier': '.2f'}},
-                    {'name': 'Trend', 'id': 'trend', 'type': 'numeric', 'format': {'specifier': '.2f'}},
                     {'name': 'Stabilität', 'id': 'stabilitaet', 'type': 'numeric', 'format': {'specifier': '.2f'}},
-                    {'name': 'Prognosewachstum', 'id': 'prognosewachstum', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                    {'name': 'Prognosewachstum', 'id': 'forecast_growth', 'type': 'numeric', 'format': {'specifier': '.2f'}},
+                    {'name': 'RMSE', 'id': 'rmse', 'type': 'numeric', 'format': {'specifier': '.2f'}},
                     {'name': 'Score', 'id': 'score', 'type': 'numeric', 'format': {'specifier': '.2f'}},
                     {'name': 'Empfehlung', 'id': 'ampel'}
                 ],
