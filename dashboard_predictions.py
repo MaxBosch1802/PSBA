@@ -83,43 +83,39 @@ df["ORIGIN_NAME"] = df["ORIGIN"].map(origin_names)
 df["DEST_NAME"] = df["DEST"].map(dest_names)
 
 
-def compute_route_ranking(data: pd.DataFrame, weights: dict) -> pd.DataFrame:
-    """Berechne Routen-Ranking basierend auf Holt-Winters-Prognosen.
+def compute_route_metrics(data: pd.DataFrame) -> pd.DataFrame:
+    """Berechne Metriken pro Route, die für alle Rankings benötigt werden.
 
-    Parameter
-    ---------
-    data : pd.DataFrame
-        Datensatz mit historischen Verbindungsdaten.
-    weights : dict
-        Gewichtung der Bewertungsfaktoren.
+    Um doppelte Berechnungen zu vermeiden, werden die Holt-Winters-Prognosen
+    und Kennzahlen je Route nur einmal erstellt. Die spätere Gewichtung für
+    die verschiedenen Szenarien greift auf dieses Ergebnis zurück.
     """
 
-    # Trainings- und Evaluierungszeiträume festlegen
-    hist = data[(data['DATE'].dt.year >= 2022) & (data['DATE'].dt.year <= 2023)]
-    eval_2024 = data[data['DATE'].dt.year == 2024]
+    hist = data[(data["DATE"].dt.year >= 2022) & (data["DATE"].dt.year <= 2023)]
+    eval_2024 = data[data["DATE"].dt.year == 2024]
 
     rows = []
 
-    for (origin, dest), grp_hist in hist.groupby(['ORIGIN', 'DEST']):
-        grp_hist = grp_hist.sort_values('DATE')
-        grp_eval = eval_2024[(eval_2024['ORIGIN'] == origin) & (eval_2024['DEST'] == dest)].sort_values('DATE')
-
-        # Zeitreihe für Holt-Winters vorbereiten
-        ts = (
-            grp_hist.groupby('DATE')['PASSENGERS']
-            .sum()
-            .sort_index()
-            .asfreq('MS', fill_value=0.0)
+    for (origin, dest), grp_hist in hist.groupby(["ORIGIN", "DEST"]):
+        grp_hist = grp_hist.sort_values("DATE")
+        grp_eval = (
+            eval_2024[(eval_2024["ORIGIN"] == origin) & (eval_2024["DEST"] == dest)]
+            .sort_values("DATE")
         )
 
-        mean_passengers = grp_hist['PASSENGERS'].mean()
-        mean_load_factor = grp_hist['AUSLASTUNG'].mean()
-        std_passengers = grp_hist['PASSENGERS'].std()
+        ts = (
+            grp_hist.groupby("DATE")["PASSENGERS"]
+            .sum()
+            .sort_index()
+            .asfreq("MS", fill_value=0.0)
+        )
 
-        # Historische Stabilität
+        mean_passengers = grp_hist["PASSENGERS"].mean()
+        mean_load_factor = grp_hist["AUSLASTUNG"].mean()
+        std_passengers = grp_hist["PASSENGERS"].std()
+
         stability = 1 - (std_passengers / mean_passengers) if mean_passengers else 0.0
 
-        # Holt-Winters Forecast
         if len(ts) > 1:
             try:
                 model = ExponentialSmoothing(
@@ -140,9 +136,8 @@ def compute_route_ranking(data: pd.DataFrame, weights: dict) -> pd.DataFrame:
         forecast_2024 = forecast[:12]
         forecast_2025 = forecast[12:]
 
-        # RMSE und relativer RMSE über 2024 berechnen
         if not grp_eval.empty:
-            actual_2024 = grp_eval['PASSENGERS'].values[:len(forecast_2024)]
+            actual_2024 = grp_eval["PASSENGERS"].values[: len(forecast_2024)]
             rmse = np.sqrt(
                 mean_squared_error(actual_2024, forecast_2024[: len(actual_2024)])
             )
@@ -151,20 +146,29 @@ def compute_route_ranking(data: pd.DataFrame, weights: dict) -> pd.DataFrame:
 
         rrmse = rmse / mean_passengers if mean_passengers else np.nan
 
-        mean_2023 = grp_hist[grp_hist['DATE'].dt.year == 2023]['PASSENGERS'].mean()
-        forecast_growth = forecast_2025.mean() - mean_2023 if not np.isnan(mean_2023) else 0.0
+        mean_2023 = grp_hist[grp_hist["DATE"].dt.year == 2023]["PASSENGERS"].mean()
+        forecast_growth = (
+            forecast_2025.mean() - mean_2023 if not np.isnan(mean_2023) else 0.0
+        )
 
-        rows.append({
-            'ORIGIN': origin,
-            'DEST': dest,
-            'mean_passagiere': mean_passengers,
-            'mean_load_factor': mean_load_factor,
-            'forecast_growth': forecast_growth,
-            'rrmse': rrmse,
-            'stabilitaet': stability
-        })
+        rows.append(
+            {
+                "ORIGIN": origin,
+                "DEST": dest,
+                "mean_passagiere": mean_passengers,
+                "mean_load_factor": mean_load_factor,
+                "forecast_growth": forecast_growth,
+                "rrmse": rrmse,
+                "stabilitaet": stability,
+            }
+        )
 
-    ranking = pd.DataFrame(rows)
+    return pd.DataFrame(rows)
+
+
+def compute_route_ranking(metrics: pd.DataFrame, weights: dict) -> pd.DataFrame:
+    """Gewichte vorhandene Metriken und erzeuge Ranking."""
+    ranking = metrics.copy()
     if ranking.empty:
         return ranking
 
@@ -197,9 +201,11 @@ def compute_route_ranking(data: pd.DataFrame, weights: dict) -> pd.DataFrame:
     ranking['score'] = ranking['score'].round(2)
     return ranking
 
-# Scoring je Szenario einmalig vorab berechnen
+# Metriken nur einmalig berechnen und anschließend je Szenario gewichten
+metrics_df = compute_route_metrics(df)
+
 precomputed_rankings = {
-    scenario: compute_route_ranking(df, weights)
+    scenario: compute_route_ranking(metrics_df, weights)
     for scenario, weights in scoring_scenarios.items()
 }
 
