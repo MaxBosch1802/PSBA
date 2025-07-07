@@ -197,6 +197,12 @@ def compute_route_ranking(data: pd.DataFrame, weights: dict) -> pd.DataFrame:
     ranking['score'] = ranking['score'].round(2)
     return ranking
 
+# Scoring je Szenario einmalig vorab berechnen
+precomputed_rankings = {
+    scenario: compute_route_ranking(df, weights)
+    for scenario, weights in scoring_scenarios.items()
+}
+
 # App initialisieren
 app = dash.Dash(__name__)
 app.title = "Flugauslastung Dashboard"
@@ -314,8 +320,7 @@ def filter_routen(min_passagiere):
     Input('scenario-select', 'value')
 )
 def update_ranking_table(min_passagiere, scenario):
-    weights = scoring_scenarios.get(scenario, scoring_scenarios['Wachstum'])
-    ranking_df = compute_route_ranking(df, weights)
+    ranking_df = precomputed_rankings.get(scenario, precomputed_rankings['Wachstum']).copy()
     ranking_df["ORIGIN_NAME"] = ranking_df["ORIGIN"].map(origin_names)
     ranking_df["DEST_NAME"] = ranking_df["DEST"].map(dest_names)
     ranking_df["ORIGIN_FULL"] = ranking_df["ORIGIN"].apply(lambda x: full_airport(x, origin_names))
@@ -350,8 +355,7 @@ def update_dashboard(route, modell, scenario):
         origin_full = full_airport(origin, origin_names)
         dest_full = full_airport(dest, dest_names)
         title = f'Passagierzahlen: {origin_full} → {dest_full}'
-        weights = scoring_scenarios.get(scenario, scoring_scenarios['Wachstum'])
-        ranking_df = compute_route_ranking(df, weights)
+        ranking_df = precomputed_rankings.get(scenario, precomputed_rankings['Wachstum'])
         row = ranking_df[(ranking_df['ORIGIN'] == origin) & (ranking_df['DEST'] == dest)]
         if row.empty:
             ranking_div = html.Div("Keine Ranking-Daten verfügbar")
