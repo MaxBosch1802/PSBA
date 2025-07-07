@@ -40,6 +40,38 @@ dest_names = (
     .to_dict()
 )
 
+# Gewichtungen für verschiedene Szenarien des Routen-Rankings
+scoring_scenarios = {
+    'Wachstum': {
+        'norm_mean_passagiere': 0.20,
+        'norm_mean_load_factor': 0.10,
+        'norm_forecast_growth': 0.50,
+        'forecast_error_stability': 0.10,
+        'norm_stabilitaet': 0.10,
+    },
+    'Effizienz': {
+        'norm_mean_passagiere': 0.30,
+        'norm_mean_load_factor': 0.40,
+        'norm_forecast_growth': 0.00,
+        'forecast_error_stability': 0.10,
+        'norm_stabilitaet': 0.20,
+    },
+    'Risikoarm': {
+        'norm_mean_passagiere': 0.20,
+        'norm_mean_load_factor': 0.10,
+        'norm_forecast_growth': 0.00,
+        'forecast_error_stability': 0.40,
+        'norm_stabilitaet': 0.30,
+    },
+    'Nachfrage': {
+        'norm_mean_passagiere': 0.40,
+        'norm_mean_load_factor': 0.30,
+        'norm_forecast_growth': 0.10,
+        'forecast_error_stability': 0.10,
+        'norm_stabilitaet': 0.10,
+    },
+}
+
 
 def full_airport(code: str, mapping: dict) -> str:
     """Hilfsfunktion für Darstellung 'CODE (Name)'"""
@@ -51,8 +83,16 @@ df["ORIGIN_NAME"] = df["ORIGIN"].map(origin_names)
 df["DEST_NAME"] = df["DEST"].map(dest_names)
 
 
-def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
-    """Berechne Routen-Ranking basierend auf Holt-Winters-Prognosen."""
+def compute_route_ranking(data: pd.DataFrame, weights: dict) -> pd.DataFrame:
+    """Berechne Routen-Ranking basierend auf Holt-Winters-Prognosen.
+
+    Parameter
+    ---------
+    data : pd.DataFrame
+        Datensatz mit historischen Verbindungsdaten.
+    weights : dict
+        Gewichtung der Bewertungsfaktoren.
+    """
 
     # Trainings- und Evaluierungszeiträume festlegen
     hist = data[(data['DATE'].dt.year >= 2022) & (data['DATE'].dt.year <= 2023)]
@@ -140,11 +180,11 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
     forecast_error_stability = 1 - ranking['norm_rrmse']
 
     ranking['score'] = (
-        0.25 * ranking['norm_mean_passagiere'] +
-        0.20 * ranking['norm_mean_load_factor'] +
-        0.25 * ranking['norm_forecast_growth'] +
-        0.20 * forecast_error_stability +
-        0.10 * ranking['norm_stabilitaet']
+        weights['norm_mean_passagiere'] * ranking['norm_mean_passagiere'] +
+        weights['norm_mean_load_factor'] * ranking['norm_mean_load_factor'] +
+        weights['norm_forecast_growth'] * ranking['norm_forecast_growth'] +
+        weights['forecast_error_stability'] * forecast_error_stability +
+        weights['norm_stabilitaet'] * ranking['norm_stabilitaet']
     ) * 100
 
     ranking['ampel'] = pd.cut(
@@ -156,13 +196,6 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
     ranking = ranking.sort_values('score', ascending=False)
     ranking['score'] = ranking['score'].round(2)
     return ranking
-
-
-ranking_df = compute_route_ranking(df)
-ranking_df["ORIGIN_NAME"] = ranking_df["ORIGIN"].map(origin_names)
-ranking_df["DEST_NAME"] = ranking_df["DEST"].map(dest_names)
-ranking_df["ORIGIN_FULL"] = ranking_df["ORIGIN"].apply(lambda x: full_airport(x, origin_names))
-ranking_df["DEST_FULL"] = ranking_df["DEST"].apply(lambda x: full_airport(x, dest_names))
 
 # App initialisieren
 app = dash.Dash(__name__)
@@ -218,6 +251,14 @@ app.layout = html.Div([
             html.Div(id='metriken-output')
         ]),
         dcc.Tab(label='Routen-Ranking', children=[
+            html.Div([
+                html.Label("Szenario auswählen:"),
+                dcc.Dropdown(
+                    id='scenario-select',
+                    options=[{'label': s, 'value': s} for s in scoring_scenarios.keys()],
+                    value='Wachstum'
+                )
+            ], style={'width': '45%', 'marginBottom': '20px'}),
             dash_table.DataTable(
                 id='ranking-table',
                 columns=[
@@ -269,9 +310,16 @@ def filter_routen(min_passagiere):
 
 @app.callback(
     Output('ranking-table', 'data'),
-    Input('passagier-filter', 'value')
+    Input('passagier-filter', 'value'),
+    Input('scenario-select', 'value')
 )
-def update_ranking_table(min_passagiere):
+def update_ranking_table(min_passagiere, scenario):
+    weights = scoring_scenarios.get(scenario, scoring_scenarios['Wachstum'])
+    ranking_df = compute_route_ranking(df, weights)
+    ranking_df["ORIGIN_NAME"] = ranking_df["ORIGIN"].map(origin_names)
+    ranking_df["DEST_NAME"] = ranking_df["DEST"].map(dest_names)
+    ranking_df["ORIGIN_FULL"] = ranking_df["ORIGIN"].apply(lambda x: full_airport(x, origin_names))
+    ranking_df["DEST_FULL"] = ranking_df["DEST"].apply(lambda x: full_airport(x, dest_names))
     filtered = ranking_df[ranking_df['mean_passagiere'] >= min_passagiere]
     return filtered.to_dict('records')
 
@@ -281,9 +329,10 @@ def update_ranking_table(min_passagiere):
     Output('metriken-output', 'children'),
     Output('ranking-output', 'children'),
     Input('route-select', 'value'),
-    Input('modell-select', 'value')
+    Input('modell-select', 'value'),
+    Input('scenario-select', 'value')
 )
-def update_dashboard(route, modell):
+def update_dashboard(route, modell, scenario):
     if not route:
         return {}, "", "", ""
 
@@ -301,6 +350,8 @@ def update_dashboard(route, modell):
         origin_full = full_airport(origin, origin_names)
         dest_full = full_airport(dest, dest_names)
         title = f'Passagierzahlen: {origin_full} → {dest_full}'
+        weights = scoring_scenarios.get(scenario, scoring_scenarios['Wachstum'])
+        ranking_df = compute_route_ranking(df, weights)
         row = ranking_df[(ranking_df['ORIGIN'] == origin) & (ranking_df['DEST'] == dest)]
         if row.empty:
             ranking_div = html.Div("Keine Ranking-Daten verfügbar")
