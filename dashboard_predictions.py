@@ -18,6 +18,34 @@ df = pd.read_csv(
 )
 df['DATE'] = pd.to_datetime(df[['YEAR', 'MONTH']].assign(DAY=1))
 
+# Mapping von Flughafencodes zu kompletten Namen laden
+names_df = pd.read_csv(
+    "gefilterte_verbindungen.csv",
+    usecols=["ORIGIN", "ORIGIN_CITY_NAME", "DEST", "DEST_CITY_NAME"],
+)
+origin_names = (
+    names_df[["ORIGIN", "ORIGIN_CITY_NAME"]]
+    .drop_duplicates()
+    .set_index("ORIGIN")["ORIGIN_CITY_NAME"]
+    .to_dict()
+)
+dest_names = (
+    names_df[["DEST", "DEST_CITY_NAME"]]
+    .drop_duplicates()
+    .set_index("DEST")["DEST_CITY_NAME"]
+    .to_dict()
+)
+
+
+def full_airport(code: str, mapping: dict) -> str:
+    """Hilfsfunktion für Darstellung 'CODE (Name)'"""
+    name = mapping.get(code)
+    return f"{code} ({name})" if name else code
+
+
+df["ORIGIN_NAME"] = df["ORIGIN"].map(origin_names)
+df["DEST_NAME"] = df["DEST"].map(dest_names)
+
 
 def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
     """Berechne Routen-Ranking basierend auf Holt-Winters-Prognosen."""
@@ -127,6 +155,10 @@ def compute_route_ranking(data: pd.DataFrame) -> pd.DataFrame:
 
 
 ranking_df = compute_route_ranking(df)
+ranking_df["ORIGIN_NAME"] = ranking_df["ORIGIN"].map(origin_names)
+ranking_df["DEST_NAME"] = ranking_df["DEST"].map(dest_names)
+ranking_df["ORIGIN_FULL"] = ranking_df["ORIGIN"].apply(lambda x: full_airport(x, origin_names))
+ranking_df["DEST_FULL"] = ranking_df["DEST"].apply(lambda x: full_airport(x, dest_names))
 
 # App initialisieren
 app = dash.Dash(__name__)
@@ -185,8 +217,8 @@ app.layout = html.Div([
             dash_table.DataTable(
                 id='ranking-table',
                 columns=[
-                    {'name': 'Origin', 'id': 'ORIGIN'},
-                    {'name': 'Destination', 'id': 'DEST'},
+                    {'name': 'Origin', 'id': 'ORIGIN_FULL'},
+                    {'name': 'Destination', 'id': 'DEST_FULL'},
                     {'name': 'Ø Passagiere', 'id': 'mean_passagiere', 'type': 'numeric', 'format': {'specifier': '.0f'}},
                     {'name': 'Ø Auslastung', 'id': 'mean_load_factor', 'type': 'numeric', 'format': {'specifier': '.2f'}},
                     {'name': 'Stabilität', 'id': 'stabilitaet', 'type': 'numeric', 'format': {'specifier': '.2f'}},
@@ -224,7 +256,7 @@ def filter_routen(min_passagiere):
     for (origin, dest), gruppe in grouped:
         avg_pax = gruppe['PASSENGERS'].mean()
         if avg_pax >= min_passagiere:
-            label = f"{origin} → {dest}"
+            label = f"{full_airport(origin, origin_names)} → {full_airport(dest, dest_names)}"
             value = f"{origin}_{dest}"
             routen.append({'label': label, 'value': value})
 
@@ -262,7 +294,9 @@ def update_dashboard(route, modell):
     else:
         origin, dest = route.split("_")
         dff = df[(df['ORIGIN'] == origin) & (df['DEST'] == dest)].copy()
-        title = f'Passagierzahlen: {origin} → {dest}'
+        origin_full = full_airport(origin, origin_names)
+        dest_full = full_airport(dest, dest_names)
+        title = f'Passagierzahlen: {origin_full} → {dest_full}'
         row = ranking_df[(ranking_df['ORIGIN'] == origin) & (ranking_df['DEST'] == dest)]
         if row.empty:
             ranking_div = html.Div("Keine Ranking-Daten verfügbar")
