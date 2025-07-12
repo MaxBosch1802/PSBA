@@ -41,13 +41,13 @@ def forecast_holt_winters(train, test, seasonal_periods=12):
     return forecast
 
 # 8. ARIMA MODELL
-def forecast_arima(train, test, order=(1,1,1)):
+def forecast_arima(train, test, order=(1,0,1)):
     model = ARIMA(train, order=order).fit()
     forecast = model.forecast(steps=len(test))
     return forecast
 
 # 9. SARIMA MODELL
-def forecast_sarima(train, test, order=(1,1,1), seasonal_order=(1,1,1,12)):
+def forecast_sarima(train, test, order=(0,0,0), seasonal_order=(1,1,0,12)):
     model = SARIMAX(train, order=order, seasonal_order=seasonal_order).fit()
     forecast = model.forecast(steps=len(test))
     return forecast
