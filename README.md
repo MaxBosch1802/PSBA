@@ -1,21 +1,7 @@
 # PSBA
-match_connections.py Datei von Herr Mallach
 
-connections.py Mergen von Ursprungsdatensatz und relevante Verbindungen
+Main Datei: dashboard_predictions.py
 
-passed_connections.csv  Alle Verbindungen die relevant sind
+Main Datensatz: verbindungen_mit_kennzahlen.csv
 
-aggregierte_verbindungen.csv Eigentlich der Datensatz, den wir brauchen (Eine Zeile pro Verbindung pro Jahr pro Monat)
-
-Update: verbindungen_mit_kennzahlen.csv ist ergänzter Datensatz mit Passergers pro Flug und Auslastung
-
-Dashboard: dashboard.py erstellt nun Vorhersagen für 2024 und 2025 mittels linearer Regression
-arima_cv.py Cross-Validation von ARIMA-Modellen ueber alle Verbindungen; schreibt Ergebnisse in arima_cv_results.csv
-
-## Installation
-
-Install the required packages with:
-
-```bash
-pip install -r requirements.txt
-```
+Weitere Dateien: Datenvorbereitung und Tests für Parameter
